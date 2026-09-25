@@ -81,10 +81,14 @@ export default async function BlogList({
                 <li key={p.id} className="flex flex-col overflow-hidden rounded-2xl border border-mk-border bg-mk-card">
                   {p.featuredImageUrl && (
                     <Link href={`/blog/${p.slug}`} className="block aspect-video w-full overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={p.featuredImageUrl}
                         alt={p.featuredImageAltText ?? p.title}
                         className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
+                        style={{ maxWidth: "100%", height: "100%" }}
+                        loading="lazy"
+                        decoding="async"
                       />
                     </Link>
                   )}

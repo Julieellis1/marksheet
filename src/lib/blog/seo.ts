@@ -21,8 +21,31 @@ export function firstParagraph(text: string): string {
 }
 
 export function countInternalLinks(body: string): number {
-  const matches = body.match(/\[[^\]]+\]\((https?:\/\/[^)]+)\)/g) ?? [];
-  return matches.filter((m) => !/^\[[^\]]+\]\((https?:\/\/(?:www\.)?(?:waec|neco|gov)\.)/i.test(m)).length;
+  // Count both absolute (same-site) and relative internal links.
+  // Relative: [label](/path), [label](blog/slug). Absolute: [label](https://mysite/...)
+  // Exclude obvious external authorities (waec, neco, gov) and any absolute
+  // URL that does not look like a site-internal path.
+  const pattern = /\[[^\]]+\]\(([^)]+)\)/g;
+  let count = 0;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(body)) !== null) {
+    const raw = (m[1] ?? "").trim().replace(/^<|>$/g, "").split(/\s+/)[0] ?? "";
+    if (!raw || raw.startsWith("#") || raw.startsWith("mailto:") || raw.startsWith("tel:")) continue;
+    // Relative site links are always internal: /features, /blog/slug, blog/slug
+    if (raw.startsWith("/") || raw.startsWith("./") || raw.startsWith("../") || /^blog\//i.test(raw)) {
+      count += 1;
+      continue;
+    }
+    if (/^https?:\/\//i.test(raw)) {
+      // Exclude well-known external authorities from the internal count.
+      if (/^https?:\/\/(?:www\.)?(?:waec|neco|gov)[\w.-]*\./i.test(raw)) continue;
+      // Heuristic: absolute URLs pointing at common site paths count as internal.
+      if (/\/(blog|features|pricing|result-verification|demo|about|contact)([\/?#]|$)/i.test(raw)) {
+        count += 1;
+      }
+    }
+  }
+  return count;
 }
 
 export function validateBlogSeo(p: BlogPostSeoInput): SeoWarning[] {

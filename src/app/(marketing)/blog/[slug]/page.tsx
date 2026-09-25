@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { BlogMarkdown } from "@/components/blog/BlogMarkdown";
 import { BlogReadTracker } from "./BlogReadTracker";
 import { BlogSidebar } from "../BlogSidebar";
 
@@ -126,16 +125,20 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
 
           {post.featuredImageUrl && (
             <div className="my-8 w-full overflow-hidden rounded-lg">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={post.featuredImageUrl}
                 alt={post.featuredImageAltText ?? post.title}
                 className="block h-auto w-full rounded-lg object-cover"
+                style={{ maxWidth: "100%", height: "auto" }}
+                loading="eager"
+                decoding="async"
               />
             </div>
           )}
 
-          <div className="prose-mk mt-8 text-base leading-relaxed text-mk-fg">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{post.body}</ReactMarkdown>
+          <div className="prose-mk mt-8 max-w-full text-base leading-relaxed text-mk-fg">
+            <BlogMarkdown body={post.body} />
           </div>
         </article>
 

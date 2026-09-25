@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { validateBlogSeo, countInternalLinks, slugify } from "@/lib/blog/seo";
+import { BlogMarkdown } from "@/components/blog/BlogMarkdown";
 import {
   generateDraftAction,
   updatePostAction,
@@ -89,6 +90,106 @@ export function EditorClient({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [previewMode, setPreviewMode] = useState<"write" | "preview">("write");
+  const [imageError, setImageError] = useState<string | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+
+  function isValidImageUrl(raw: string): boolean {
+    const v = raw.trim();
+    if (!v) return false;
+    if (v.startsWith("/") || v.startsWith("./") || v.startsWith("../")) return true;
+    try {
+      const u = new URL(v);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  function insertAtCursor(before: string, after = "", placeholder = "") {
+    const el = bodyRef.current;
+    if (!el) {
+      setBody((b) => `${b}${before}${placeholder}${after}`);
+      return;
+    }
+    const start = el.selectionStart ?? body.length;
+    const end = el.selectionEnd ?? body.length;
+    const selected = body.slice(start, end) || placeholder;
+    const next = `${body.slice(0, start)}${before}${selected}${after}${body.slice(end)}`;
+    setBody(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const cursor = start + before.length + selected.length + after.length;
+      el.setSelectionRange(cursor, cursor);
+    });
+  }
+
+  function insertLinePrefix(prefix: string) {
+    const el = bodyRef.current;
+    if (!el) {
+      setBody((b) => `${prefix}${b}`);
+      return;
+    }
+    const start = el.selectionStart ?? 0;
+    const lineStart = body.lastIndexOf("\n", start - 1) + 1;
+    const next = `${body.slice(0, lineStart)}${prefix}${body.slice(lineStart)}`;
+    setBody(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + prefix.length, start + prefix.length);
+    });
+  }
+
+  function handleBold() {
+    insertAtCursor("**", "**", "bold text");
+  }
+
+  function handleItalic() {
+    insertAtCursor("*", "*", "italic text");
+  }
+
+  function handleLink() {
+    const url = window.prompt("Link URL (https://… or /page-path):", "https://");
+    if (url === null) return;
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    const el = bodyRef.current;
+    const start = el?.selectionStart ?? body.length;
+    const end = el?.selectionEnd ?? body.length;
+    const selected = body.slice(start, end);
+    if (selected) {
+      insertAtCursor("[", `](${trimmed})`);
+      return;
+    }
+    const label = window.prompt("Link text:", "read more") || "read more";
+    const snippet = `[${label}](${trimmed})`;
+    const next = `${body.slice(0, start)}${snippet}${body.slice(end)}`;
+    setBody(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start + snippet.length, start + snippet.length);
+    });
+  }
+
+  function handleImage() {
+    setImageError(null);
+    const url = window.prompt("Image URL (https://… or /uploads/…):", "https://");
+    if (url === null) return;
+    const trimmed = url.trim();
+    if (!isValidImageUrl(trimmed)) {
+      setImageError("That image URL is not valid. Use a full https:// URL or a site path like /uploads/photo.jpg.");
+      return;
+    }
+    const alt = window.prompt("Image description (alt text):", "Descriptive image text") || "";
+    const snippet = `![${alt.replace(/[\[\]]/g, "")}](${trimmed})`;
+    const el = bodyRef.current;
+    const pos = el?.selectionStart ?? body.length;
+    const next = `${body.slice(0, pos)}\n\n${snippet}\n\n${body.slice(pos)}`;
+    setBody(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+    });
+  }
 
   const primaryKeywordText = useMemo(
     () => keywords.find((k) => k.id === primaryKeywordId)?.keywordText ?? null,
@@ -360,10 +461,66 @@ export function EditorClient({
             <span className="text-xs text-white/50">Excerpt</span>
             <textarea value={excerpt} onChange={(e) => setExcerpt(e.target.value)} rows={2} className={inputClass} />
           </label>
-          <label className="block md:col-span-2">
-            <span className="text-xs text-white/50">Body (markdown)</span>
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={12} className={`${inputClass} font-mono`} />
-          </label>
+          <div className="md:col-span-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs text-white/50">Body (markdown — bold, italic, links & images supported)</span>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode("write")}
+                  className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${previewMode === "write" ? "bg-white text-[#0a0e1a] border-white" : "text-white/50 border-white/10 hover:border-white/30"}`}
+                >
+                  Write
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode("preview")}
+                  className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${previewMode === "preview" ? "bg-white text-[#0a0e1a] border-white" : "text-white/50 border-white/10 hover:border-white/30"}`}
+                >
+                  Preview
+                </button>
+              </div>
+            </div>
+            <div className="mt-2 flex gap-1 flex-wrap rounded-lg border border-white/10 bg-black/20 p-1.5">
+              <button type="button" title="Bold (**text**)" onClick={handleBold} className="px-2 py-1 text-xs font-bold text-white/70 hover:text-white hover:bg-white/10 rounded">B</button>
+              <button type="button" title="Italic (*text*)" onClick={handleItalic} className="px-2 py-1 text-xs italic text-white/70 hover:text-white hover:bg-white/10 rounded">I</button>
+              <span className="w-px bg-white/10 mx-1" />
+              <button type="button" title="Heading 2" onClick={() => insertLinePrefix("## ")} className="px-2 py-1 text-xs text-white/70 hover:text-white hover:bg-white/10 rounded">H2</button>
+              <button type="button" title="Heading 3" onClick={() => insertLinePrefix("### ")} className="px-2 py-1 text-xs text-white/70 hover:text-white hover:bg-white/10 rounded">H3</button>
+              <span className="w-px bg-white/10 mx-1" />
+              <button type="button" title="Insert link [text](url)" onClick={handleLink} className="px-2 py-1 text-xs text-white/70 hover:text-white hover:bg-white/10 rounded underline">Link</button>
+              <button type="button" title="Insert image ![alt](url)" onClick={handleImage} className="px-2 py-1 text-xs text-white/70 hover:text-white hover:bg-white/10 rounded">Image</button>
+              <span className="w-px bg-white/10 mx-1" />
+              <button type="button" title="Bullet list" onClick={() => insertLinePrefix("- ")} className="px-2 py-1 text-xs text-white/70 hover:text-white hover:bg-white/10 rounded">• List</button>
+              <button type="button" title="Numbered list" onClick={() => insertLinePrefix("1. ")} className="px-2 py-1 text-xs text-white/70 hover:text-white hover:bg-white/10 rounded">1. List</button>
+              <button type="button" title="Quote" onClick={() => insertLinePrefix("> ")} className="px-2 py-1 text-xs text-white/70 hover:text-white hover:bg-white/10 rounded">Quote</button>
+              <button type="button" title="Inline code" onClick={() => insertAtCursor("`", "`", "code")} className="px-2 py-1 text-xs font-mono text-white/70 hover:text-white hover:bg-white/10 rounded">Code</button>
+            </div>
+            {imageError && <p className="mt-2 text-xs text-red-400">{imageError}</p>}
+            <p className="mt-2 text-[11px] text-white/30">
+              Syntax: **bold**, *italic*, [link text](https://…), ![alt text](https://…image.jpg). Any image URL you insert renders responsively on the live page.
+            </p>
+            {previewMode === "write" ? (
+              <textarea
+                ref={bodyRef}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={14}
+                placeholder={"**Bold intro sentence.**\n\n*Italic supporting line.*\n\nRead our [fees guide](/features) for details.\n\n![Students studying](https://…/photo.jpg)"}
+                className={`${inputClass} font-mono mt-2`}
+              />
+            ) : (
+              <div className="mt-2 rounded-lg border border-white/10 bg-black/30 p-5 min-h-[280px]">
+                {body.trim() ? (
+                  <div className="prose-mk text-sm leading-relaxed text-white/85 [&_strong]:text-white [&_b]:text-white [&_em]:text-white/85 [&_a]:text-emerald-300">
+                    <BlogMarkdown body={body} />
+                  </div>
+                ) : (
+                  <p className="text-xs text-white/30">Nothing to preview yet — write some markdown first.</p>
+                )}
+              </div>
+            )}
+          </div>
           <label className="block">
             <span className="text-xs text-white/50">Meta title</span>
             <input value={metaTitle} onChange={(e) => setMetaTitle(e.target.value)} className={inputClass} />
@@ -382,7 +539,20 @@ export function EditorClient({
           </label>
           <label className="block">
             <span className="text-xs text-white/50">Featured image URL</span>
-            <input value={featuredImageUrl} onChange={(e) => setFeaturedImageUrl(e.target.value)} className={inputClass} />
+            <input value={featuredImageUrl} onChange={(e) => setFeaturedImageUrl(e.target.value)} placeholder="https://… or /uploads/…" className={inputClass} />
+            {featuredImageUrl.trim() && isValidImageUrl(featuredImageUrl) && (
+              <span className="mt-2 block overflow-hidden rounded-lg border border-white/10">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={featuredImageUrl.trim()}
+                  alt={featuredImageAltText || "Featured image preview"}
+                  className="block h-auto w-full object-cover"
+                  style={{ maxWidth: "100%", height: "auto" }}
+                  loading="lazy"
+                />
+              </span>
+            )}
+            <span className="mt-1 block text-[11px] text-white/30">Renders full-width and responsive on the live page.</span>
           </label>
           <label className="block">
             <span className="text-xs text-white/50">Featured image alt text</span>
